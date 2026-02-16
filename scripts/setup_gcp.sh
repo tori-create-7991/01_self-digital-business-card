@@ -79,6 +79,7 @@ for role in "${SA_ROLES[@]}"; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="$role" \
+    --condition=None \
     --quiet
 done
 echo "IAM roles granted."
@@ -225,6 +226,7 @@ if [ -n "$WIF_POOL_NAME" ]; then
     --project="$PROJECT_ID" \
     --role="roles/iam.workloadIdentityUser" \
     --member="principalSet://iam.googleapis.com/${WIF_POOL_NAME}/attribute.repository/${GH_REPO}" \
+    --condition=None \
     --quiet
 fi
 
