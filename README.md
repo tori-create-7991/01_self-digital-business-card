@@ -28,6 +28,7 @@ You will run a setup script in Google Cloud Shell to prepare the environment.
 3. Make the script executable and run it:
    ```bash
    chmod +x scripts/setup_gcp.sh
+   gcloud auth application-default login
    ./scripts/setup_gcp.sh
    ```
 4. Follow the prompts (Enter your Project ID and GitHub Repo `username/repo`).
