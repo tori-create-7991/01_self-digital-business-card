@@ -46,6 +46,7 @@ locals {
     "roles/serviceusage.serviceUsageAdmin", # Enable/disable APIs
     "roles/resourcemanager.projectIamAdmin", # Manage IAM bindings (for terraform)
     "roles/iam.workloadIdentityPoolAdmin",  # Manage WIF pools (for terraform)
+    "roles/iam.serviceAccountAdmin",        # Manage service accounts (read/update self)
     "roles/storage.admin",                  # Terraform state bucket
   ]
 }

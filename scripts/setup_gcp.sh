@@ -73,6 +73,7 @@ SA_ROLES=(
   "roles/serviceusage.serviceUsageAdmin"
   "roles/resourcemanager.projectIamAdmin"
   "roles/iam.workloadIdentityPoolAdmin"
+  "roles/iam.serviceAccountAdmin"
   "roles/storage.admin"
 )
 for role in "${SA_ROLES[@]}"; do
