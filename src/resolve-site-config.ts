@@ -28,27 +28,38 @@ function resolveLinkCard(card: LinkCard, metadata: ScrapedMetadata): LinkCard {
   };
 }
 
-function resolveInstagramCard(
+async function resolveInstagramCard(
   card: InstagramCard,
   metadata: ScrapedMetadata,
-): InstagramCard {
-  const resolvedImage = metadata.image ?? card.fallbackImage ?? card.images[0]?.src ?? null;
+  fetcher: MetadataFetcher,
+): Promise<InstagramCard> {
+  const resolvedImage =
+    metadata.image ?? card.fallbackImage ?? card.images[0]?.src ?? null;
   const resolvedLabel = metadata.title ?? card.fallbackLabel ?? card.label;
+  const resolvedImages = await Promise.all(
+    card.images.map(async (image, index) => {
+      const sourceUrl = image.sourceUrl ?? image.href;
+      let tileMetadata: ScrapedMetadata;
+      try {
+        tileMetadata = await fetcher(sourceUrl);
+      } catch {
+        tileMetadata = { image: null, title: null, description: null };
+      }
+
+      return {
+        src: tileMetadata.image ?? resolvedImage ?? image.src,
+        alt: image.alt || `${resolvedLabel} thumbnail ${index + 1}`,
+        href: image.href || card.url,
+        sourceUrl,
+      };
+    }),
+  );
 
   return {
     ...card,
     label: resolvedLabel,
     sublabel: metadata.description ?? card.fallbackDescription ?? card.sublabel,
-    images:
-      resolvedImage === null
-        ? card.images
-        : [
-            {
-              src: resolvedImage,
-              alt: card.images[0]?.alt ?? `${resolvedLabel} thumbnail`,
-            },
-            ...card.images.slice(1),
-          ],
+    images: resolvedImages,
   };
 }
 
@@ -80,7 +91,7 @@ export async function resolveSiteConfigMetadata(
         return resolveLinkCard(card, metadata);
       }
 
-      return resolveInstagramCard(card, metadata);
+      return resolveInstagramCard(card, metadata, fetcher);
     }),
   );
 

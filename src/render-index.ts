@@ -23,23 +23,25 @@ function renderInstagramCard(card: Extract<Card, { type: "instagram" }>): string
   const images = card.images
     .map(
       (image) =>
-        `<img src="${escapeHtml(image.src)}" alt="${escapeHtml(image.alt)}" loading="lazy">`,
+        `<a href="${escapeHtml(image.href)}" ${EXTERNAL_REL} class="instagram-tile"><img src="${escapeHtml(image.src)}" alt="${escapeHtml(image.alt)}" loading="lazy"></a>`,
     )
     .join("\n            ");
 
   return `
-      <a href="${escapeHtml(card.url)}" ${EXTERNAL_REL} class="card instagram-card">
+      <div class="card instagram-card">
         <div class="instagram-header">
             <div class="icon-wrapper"><i class="${escapeHtml(card.iconClass)}"></i></div>
             <div class="header-text">
-                <div class="card-label">${escapeHtml(card.label)}</div>
-                <div class="card-sublabel">${escapeHtml(card.sublabel)}</div>
+                <a href="${escapeHtml(card.url)}" ${EXTERNAL_REL} class="instagram-title-link">
+                  <div class="card-label">${escapeHtml(card.label)}</div>
+                  <div class="card-sublabel">${escapeHtml(card.sublabel)}</div>
+                </a>
             </div>
         </div>
         <div class="instagram-grid">
             ${images}
         </div>
-      </a>`;
+      </div>`;
 }
 
 function renderLinkCard(card: Extract<Card, { type: "link" }>): string {

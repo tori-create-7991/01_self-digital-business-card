@@ -161,6 +161,10 @@ body {
 .instagram-header .header-text {
   min-width: 0;
 }
+.instagram-title-link {
+  color: inherit;
+  text-decoration: none;
+}
 .instagram-header .card-label,
 .instagram-header .card-sublabel {
   display: -webkit-box;
@@ -183,6 +187,10 @@ body {
     flex: 1;
     min-height: 0;
     width: 100%;
+}
+
+.instagram-tile {
+    display: block;
 }
 
 .instagram-grid img {
