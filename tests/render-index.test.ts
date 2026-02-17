@@ -33,4 +33,20 @@ describe("renderIndexHtml", () => {
     expect(html).toContain('meta name="description"');
     expect(html).toContain(siteConfig.meta.description);
   });
+
+  it("renders instagram grid as 4 linked tiles", () => {
+    const html = renderIndexHtml(siteConfig);
+    const instagramCardStart = html.indexOf('class="card instagram-card"');
+    expect(instagramCardStart).toBeGreaterThan(-1);
+    const instagramSlice = html.slice(instagramCardStart, instagramCardStart + 3000);
+
+    expect(instagramSlice).toContain('class="instagram-tile"');
+    expect(
+      (instagramSlice.match(/class="instagram-tile"/g) ?? []).length,
+    ).toBe(4);
+    expect(
+      (instagramSlice.match(/target="_blank" rel="noopener noreferrer"/g) ?? [])
+        .length,
+    ).toBeGreaterThanOrEqual(5);
+  });
 });
