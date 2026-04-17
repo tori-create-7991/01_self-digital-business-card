@@ -48,6 +48,7 @@ export type InstagramCard = {
     alt: string
     href: string
     sourceUrl?: string
+    scrape?: boolean
   }>
 } & ScrapeFields
 
@@ -97,9 +98,10 @@ export const siteConfig: SiteConfig = {
       images: [
         {
           src: '/images/profile-ryo.png',
-          alt: '登山風景のInstagram投稿',
+          alt: 'Ryo tonegawa のInstagramトップ',
           href: 'https://instagram.com/ryo_fren',
           sourceUrl: 'https://instagram.com/ryo_fren',
+          scrape: false,
         },
         {
           src: '/images/profile-ryo.png',

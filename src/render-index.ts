@@ -20,12 +20,18 @@ function renderSocialCard(card: Extract<Card, { type: "social" }>): string {
 }
 
 function renderInstagramCard(card: Extract<Card, { type: "instagram" }>): string {
-  const images = card.images
+  const [hero, ...stories] = card.images;
+
+  const heroHtml = hero
+    ? `<a href="${escapeHtml(hero.href)}" ${EXTERNAL_REL} class="instagram-tile instagram-tile--hero"><img src="${escapeHtml(hero.src)}" alt="${escapeHtml(hero.alt)}" loading="lazy"></a>`
+    : "";
+
+  const storiesHtml = stories
     .map(
       (image) =>
-        `<a href="${escapeHtml(image.href)}" ${EXTERNAL_REL} class="instagram-tile"><img src="${escapeHtml(image.src)}" alt="${escapeHtml(image.alt)}" loading="lazy"></a>`,
+        `<a href="${escapeHtml(image.href)}" ${EXTERNAL_REL} class="instagram-tile instagram-tile--story"><img src="${escapeHtml(image.src)}" alt="${escapeHtml(image.alt)}" loading="lazy"></a>`,
     )
-    .join("\n            ");
+    .join("\n          ");
 
   return `
       <div class="card instagram-card">
@@ -38,8 +44,11 @@ function renderInstagramCard(card: Extract<Card, { type: "instagram" }>): string
                 </a>
             </div>
         </div>
-        <div class="instagram-grid">
-            ${images}
+        <div class="instagram-hero">
+          ${heroHtml}
+        </div>
+        <div class="instagram-stories">
+          ${storiesHtml}
         </div>
       </div>`;
 }

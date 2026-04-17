@@ -145,6 +145,63 @@ describe("resolveSiteConfigMetadata", () => {
     expect((resolved.cards[0] as any).images[1].href).toBe("https://instagram.com/user/stories/1");
   });
 
+  it("skips per-tile scrape when image.scrape is false", async () => {
+    const fetchedUrls: string[] = [];
+    const resolved = await resolveSiteConfigMetadata(
+      {
+        meta: { title: "title", description: "desc", favicon: "favicon" },
+        profile: { name: "name", role: "role", imageUrl: "profile", imageAlt: "alt" },
+        cards: [
+          {
+            type: "instagram",
+            url: "https://instagram.com/user",
+            sourceUrl: "https://instagram.com/user",
+            scrape: true,
+            iconClass: "fa-brands fa-instagram",
+            fallbackLabel: "Fallback Insta",
+            fallbackDescription: "@fallback",
+            fallbackImage: "https://fallback/insta.jpg",
+            label: "Fallback Insta",
+            sublabel: "@fallback",
+            images: [
+              {
+                src: "/local/hero.png",
+                alt: "hero",
+                href: "https://instagram.com/user",
+                sourceUrl: "https://instagram.com/user",
+                scrape: false,
+              },
+              {
+                src: "https://fallback/insta.jpg",
+                alt: "story",
+                href: "https://instagram.com/user/stories/1",
+                sourceUrl: "https://instagram.com/user/stories/1",
+              },
+            ],
+          },
+        ],
+      } as any,
+      async (url) => {
+        fetchedUrls.push(url);
+        return {
+          image: `https://scraped/${encodeURIComponent(url)}.jpg`,
+          title: "Scraped Insta",
+          description: "Scraped Desc",
+        };
+      },
+    );
+
+    expect((resolved.cards[0] as any).images[0].src).toBe("/local/hero.png");
+    expect((resolved.cards[0] as any).images[1].src).toContain(
+      encodeURIComponent("https://instagram.com/user/stories/1"),
+    );
+    const heroFetchCount = fetchedUrls.filter(
+      (url) => url === "https://instagram.com/user",
+    ).length;
+    expect(heroFetchCount).toBe(1);
+    expect(fetchedUrls).toContain("https://instagram.com/user/stories/1");
+  });
+
   it("continues with fallback when metadata fetch throws", async () => {
     const resolved = await resolveSiteConfigMetadata(
       {
