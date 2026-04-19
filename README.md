@@ -58,6 +58,18 @@ Add the following:
 2. Go to the **Actions** tab in your repository to watch the deployment.
 3. Once finished, the **Deploy to Firebase Hosting** step will output your site URL (usually `https://YOUR-PROJECT.web.app`).
 
+### Deploy fails: WIF / attribute condition (after repo rename)
+
+If Actions fails at **Authenticate to Google Cloud** with `rejected by the attribute condition`, the Workload Identity provider may still expect the old `owner/repo`. From a machine with `gcloud` logged in, run:
+
+```bash
+export GCP_PROJECT_ID="your-gcp-project-id"
+export GITHUB_REPO="tori-create-7991/01_self-digital-business-card"
+./scripts/fix_wif_github_repo.sh
+```
+
+Then re-run the failed workflow. Alternatively run a full `terraform apply` from `./terraform` with `-var="github_repo=..."` matching this repository (see `scripts/setup_gcp.sh`).
+
 ## Local Development
 To run the site locally:
 ```bash
