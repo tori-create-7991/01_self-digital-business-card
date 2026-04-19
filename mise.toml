@@ -1,3 +1,7 @@
+[tools]
+# https://github.com/mise-plugins/mise-gcloud — pin 例: "565.0.0"
+gcloud = "latest"
+
 [env]
 CLOUDSDK_ACTIVE_CONFIG_NAME = "default"
 GH_TOKEN = "{{exec(command='gh auth token --user tori-create-7991')}}"
