@@ -8,6 +8,8 @@ dist/
 *.tfstate
 *.tfstate.backup
 .terraform/
+terraform/terraform.tfvars
+terraform/*.auto.tfvars
 plans/
 .cache/
 .logs/

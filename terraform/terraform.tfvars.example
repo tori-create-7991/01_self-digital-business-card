@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Or pass -var / TF_VAR_* instead.
+# See repository root .env.example for TF_VAR_ names.
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# GitHub Actions OIDC / WIF: must match github.repository (owner/repo)
+github_repo = "owner/repo"
+
+# Optional: Firebase Hosting site id; leave empty to use provider default
+# site_id = ""
+
+# Cloudflare (DNS for custom_domain)
+cloudflare_api_token = "your-cloudflare-api-token"
+cloudflare_zone_id   = "your-cloudflare-zone-id"
+
+# Optional
+# custom_domain = "card.tori-dev.com"
