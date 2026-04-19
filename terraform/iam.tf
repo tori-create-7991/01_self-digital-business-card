@@ -20,6 +20,9 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
     "attribute.repository" = "assertion.repository"
   }
 
+  # If GitHub repo is renamed/transferred, this must be updated (terraform apply) or
+  # WIF auth fails with unauthorized_client / "rejected by the attribute condition".
+  # CI cannot run terraform until auth succeeds, so fix attribute_condition in GCP Console once if needed.
   attribute_condition = "assertion.repository == '${var.github_repo}'"
 
   oidc {
