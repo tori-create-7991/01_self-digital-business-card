@@ -39,6 +39,15 @@ async function resolveInstagramCard(
   const resolvedImages = await Promise.all(
     card.images.map(async (image, index) => {
       const sourceUrl = image.sourceUrl ?? image.href;
+      if (image.scrape === false) {
+        return {
+          src: image.src,
+          alt: image.alt || `${resolvedLabel} thumbnail ${index + 1}`,
+          href: image.href || card.url,
+          sourceUrl,
+        };
+      }
+
       let tileMetadata: ScrapedMetadata;
       try {
         tileMetadata = await fetcher(sourceUrl);

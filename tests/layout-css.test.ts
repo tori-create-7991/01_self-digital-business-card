@@ -12,7 +12,8 @@ describe("layout hardening styles", () => {
     expect(css).not.toContain("height: calc(100% - 80px)");
     expect(css).toContain(".instagram-card");
     expect(css).toContain("display: flex");
-    expect(css).toContain(".instagram-grid");
+    expect(css).toContain(".instagram-hero");
+    expect(css).toContain(".instagram-stories");
     expect(css).toContain("flex: 1");
   });
 

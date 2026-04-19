@@ -179,21 +179,33 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.instagram-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 2px;
+.instagram-hero {
     flex: 1;
     min-height: 0;
+    width: 100%;
+    display: flex;
+    overflow: hidden;
+}
+
+.instagram-stories {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    height: 110px;
     width: 100%;
 }
 
 .instagram-tile {
     display: block;
+    overflow: hidden;
 }
 
-.instagram-grid img {
+.instagram-tile--hero {
+    flex: 1;
+}
+
+.instagram-hero img,
+.instagram-stories img {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -269,11 +281,15 @@ body {
   }
 
   .instagram-card {
-    min-height: 400px; /* Needs space for grid */
+    min-height: 460px;
   }
 
-  .instagram-grid {
-     min-height: 300px;
+  .instagram-hero {
+    min-height: 260px;
+  }
+
+  .instagram-stories {
+    height: 100px;
   }
 
   .link-card {

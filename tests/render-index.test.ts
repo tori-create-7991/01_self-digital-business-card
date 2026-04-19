@@ -34,16 +34,20 @@ describe("renderIndexHtml", () => {
     expect(html).toContain(siteConfig.meta.description);
   });
 
-  it("renders instagram grid as 4 linked tiles", () => {
+  it("renders instagram card as hero + 3 story tiles", () => {
     const html = renderIndexHtml(siteConfig);
     const instagramCardStart = html.indexOf('class="card instagram-card"');
     expect(instagramCardStart).toBeGreaterThan(-1);
     const instagramSlice = html.slice(instagramCardStart, instagramCardStart + 3000);
 
-    expect(instagramSlice).toContain('class="instagram-tile"');
+    expect(instagramSlice).toContain('class="instagram-hero"');
+    expect(instagramSlice).toContain('class="instagram-stories"');
     expect(
-      (instagramSlice.match(/class="instagram-tile"/g) ?? []).length,
-    ).toBe(4);
+      (instagramSlice.match(/class="instagram-tile instagram-tile--hero"/g) ?? []).length,
+    ).toBe(1);
+    expect(
+      (instagramSlice.match(/class="instagram-tile instagram-tile--story"/g) ?? []).length,
+    ).toBe(3);
     expect(
       (instagramSlice.match(/target="_blank" rel="noopener noreferrer"/g) ?? [])
         .length,
