@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.plans/
 .worktrees/
 .DS_Store
 *.tfstate
@@ -7,3 +8,5 @@ dist/
 .terraform/
 plans/
 .cache/
+.logs/
+.research_output/

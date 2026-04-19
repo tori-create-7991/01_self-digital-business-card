@@ -1,0 +1,7 @@
+[env]
+CLOUDSDK_ACTIVE_CONFIG_NAME = "default"
+GH_TOKEN = "{{exec(command='gh auth token --user tori-create-7991')}}"
+GIT_AUTHOR_NAME = "tori-create-7991"
+GIT_AUTHOR_EMAIL = "tori-create-7991@users.noreply.github.com"
+GIT_COMMITTER_NAME = "tori-create-7991"
+GIT_COMMITTER_EMAIL = "tori-create-7991@users.noreply.github.com"
