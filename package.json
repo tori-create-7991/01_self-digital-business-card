@@ -1,6 +1,9 @@
 {
   "name": "ryo-tori-dev",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "generate": "tsx scripts/generate-index.ts",
     "dev": "npm run generate && vite",
