@@ -16,7 +16,7 @@ Names follow one rule: pool `<repo-slug>-pool`, provider `github-actions`, servi
 ## Prerequisites
 - A GCP project with billing, and permission to edit IAM / Workload Identity Federation.
 - A GitHub account (`gh auth login`).
-- [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), [Terraform](https://developer.hashicorp.com/terraform/install) 1.7+ and Node.js 22 (`mise install` sets them up).
+- [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), [Terraform](https://developer.hashicorp.com/terraform/install) 1.7+ and Node.js 22.
 - Optional: a Cloudflare zone for a custom domain, and an API token with `Zone:Read` + `DNS:Edit` on that zone.
 
 ## Setup (from scratch, e.g. after forking)
