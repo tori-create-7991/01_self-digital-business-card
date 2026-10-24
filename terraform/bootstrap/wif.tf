@@ -58,7 +58,7 @@ resource "google_project_iam_member" "deployer" {
 }
 
 # state バケットは他リポジトリと共有しているので、app stack の state の下だけ読み書きできるようにする。
-# 一覧（storage.objects.list）はバケットに対する判定なので、バケット自体も条件に含める。
+# 一覧（storage.objects.list）はバケットに対する判定なので、一覧の prefix で絞る（他リポジトリの state 名も見せない）。
 resource "google_storage_bucket_iam_member" "deployer_app_state" {
   bucket = var.tf_state_bucket
   role   = "roles/storage.objectAdmin"
@@ -66,7 +66,7 @@ resource "google_storage_bucket_iam_member" "deployer_app_state" {
 
   condition {
     title       = "app-state-only"
-    description = "terraform/01_self-digital-business-card/app/ の下だけ"
-    expression  = "resource.name == \"projects/_/buckets/${var.tf_state_bucket}\" || resource.name.startsWith(\"projects/_/buckets/${var.tf_state_bucket}/objects/terraform/01_self-digital-business-card/app/\")"
+    description = "app stack の state の下だけ"
+    expression  = "(resource.name == \"projects/_/buckets/${var.tf_state_bucket}\" && api.getAttribute(\"storage.googleapis.com/objectListPrefix\", \"\").startsWith(\"${local.app_state_prefix}\")) || resource.name.startsWith(\"projects/_/buckets/${var.tf_state_bucket}/objects/${local.app_state_prefix}\")"
   }
 }

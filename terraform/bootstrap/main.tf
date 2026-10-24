@@ -1,6 +1,9 @@
 locals {
   github_owner = split("/", var.github_repo)[0]
 
+  # app stack の backend prefix（terraform/app/providers.tf）と揃える
+  app_state_prefix = "terraform/01_self-digital-business-card/app/"
+
   # Firebase Hosting のサイト ID（app stack と同じ規則）
   card_site_id = "${var.project_id}-card"
 

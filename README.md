@@ -9,7 +9,7 @@ This repository contains the source code for a personal profile site using **Vit
   - `terraform/bootstrap/` — applied **by a person, locally**. CI identity (Workload Identity Federation pool/provider, service account, IAM), GitHub Actions Variables, and the Cloudflare DNS record (optional).
   - `terraform/app/` — applied **by GitHub Actions** on every push to `main`. Firebase project, Hosting site, custom domain.
 - **CI/CD**: GitHub Actions (`.github/workflows/deploy.yml`): `terraform apply` (app) → build → `firebase deploy`.
-- **Security**: keyless auth (WIF). The pool is dedicated to this repository and only `refs/heads/main` can impersonate the service account. CI holds **no secrets** (Actions Variables only), and its service account cannot change IAM, WIF, or DNS, and can only read/write the app stack's state.
+- **Security**: keyless auth (WIF). The pool is dedicated to this repository and only `refs/heads/main` can impersonate the service account. CI holds **no secrets** (Actions Variables only), and its service account cannot change IAM, WIF, or DNS, and can only read/write the app stack's state. Firebase Hosting roles are project-wide, so if the project hosts other sites, this service account can deploy to them too (accepted: only `main` of this repository can use it).
 
 Names follow one rule: pool `<repo-slug>-pool`, provider `github-actions`, service account `gha-<repo-slug>`, state prefix `terraform/<repo-name>/{bootstrap,app}` (the full repository name, never a generic prefix such as `terraform/state`).
 

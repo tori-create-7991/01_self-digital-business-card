@@ -15,7 +15,7 @@
 
 ## 0. 準備
 
-作業はこの PR のブランチで行う。gcloud はアカウントを明示する（アクティブな設定が別アカウントのことがあるため）。以下のコマンドは同じシェルで続けて実行する。
+作業はこの PR のブランチで行う。手順 1〜4 の間は、他の PR を main にマージしない（旧 CI は旧 prefix の state を使い続けるため）。gcloud はアカウントを明示する（アクティブな設定が別アカウントのことがあるため）。以下のコマンドは同じシェルで続けて実行する。
 
 ```bash
 cd ~/Repo/my/01_self-digital-business-card/.worktrees/two-stage-iac
@@ -51,12 +51,14 @@ ZONE_ID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   "https://api.cloudflare.com/client/v4/zones?name=tori-dev.com" | jq -r '.result[0].id')
 REC_ID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=CNAME&name=card.tori-dev.com" | jq -r '.result[0].id')
+[ -n "$ZONE_ID" ] && [ "$ZONE_ID" != null ] && [ -n "$REC_ID" ] && [ "$REC_ID" != null ] || { echo "zone/record が見つからない"; false; }
 terraform -chdir=terraform/bootstrap import 'cloudflare_dns_record.card[0]' "$ZONE_ID/$REC_ID"
 
 terraform -chdir=terraform/bootstrap plan
 ```
 
-- 確認: `20 to add, 0 to destroy`。`cloudflare_dns_record.card[0]` は変更なし（出ても `content` と `proxied` が変わらないこと）。
+- 確認: `20 to add, 0 to destroy`。`cloudflare_dns_record.card[0]` は `name`・`content`・`ttl`・`proxied` が変わらないこと
+  （`comment`・`tags`・`settings` の差分は v5 で import した直後によく出るので許容）。
   作成されるのは Pool 1・Provider 1・SA 1・SA の WIF 許可 1・project IAM 3・バケット IAM 1（条件付き）・API 8・Variables 4。
 - 問題なければ `terraform -chdir=terraform/bootstrap apply`。
 
@@ -72,6 +74,10 @@ gh variable list -R tori-create-7991/01_self-digital-business-card
   → 「Authenticate to Google Cloud」で失敗すること（main 以外はなりすませない）。
 - 戻し方: `terraform -chdir=terraform/bootstrap state rm 'cloudflare_dns_record.card[0]'` で DNS を外してから
   `terraform -chdir=terraform/bootstrap destroy`。旧構成は何も変わっていないので CI は旧 Secrets のまま動く。
+  WIF の Pool と Provider は削除後 30 日はソフト削除状態で、同じ ID で作り直すと 409 になる。やり直すときは先に
+  `gcloud iam workload-identity-pools undelete self-digital-business-card-pool --location=global --project=tori-develop $A` と
+  `gcloud iam workload-identity-pools providers undelete github-actions --workload-identity-pool=self-digital-business-card-pool --location=global --project=tori-develop $A`
+  を実行し、`terraform import` で取り込む。
 
 ## 3. app の state を整理する（マージ直前に行う）
 
@@ -85,6 +91,16 @@ terraform -chdir=terraform/app plan
   （旧 Pool・旧 Provider・旧 SA・旧 SA の IAM 6・WIF 許可・API 3）、custom domain の `moved` が 1 件。
   **destroy が 1 件でも出たら止める**（特に `github-pool` は他リポジトリの CI が使っている）。
 - 問題なければ `terraform -chdir=terraform/app apply`。GCP 上は何も変わらず、新しい state から外れるだけ。
+- 任意（マージ前に新 SA の権限を確かめる）: 自分に一時的になりすまし権限を付け、新 SA として app の plan を流す。
+  ```bash
+  NEW=gha-self-digital-business-card@tori-develop.iam.gserviceaccount.com
+  ME=$(gcloud config get-value account $A 2>/dev/null)   # 空なら A に入れたアカウントを書く
+  gcloud iam service-accounts add-iam-policy-binding $NEW --member="user:$ME" --role=roles/iam.serviceAccountTokenCreator --project=tori-develop $A
+  GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token --impersonate-service-account=$NEW $A) \
+    terraform -chdir=terraform/app plan -lock=false -detailed-exitcode   # exit 0 なら backend と読み取り権限は足りている
+  gcloud iam service-accounts remove-iam-policy-binding $NEW --member="user:$ME" --role=roles/iam.serviceAccountTokenCreator --project=tori-develop $A
+  ```
+  この権限は Terraform に入れず、確認が終わったら必ず remove する。`firebase deploy` の権限はここでは確かめられない。
 - 戻し方: 新 prefix の state を消し、手順 1 からやり直す（旧 prefix の state は無傷）。
 
 ## 4. PR をマージして CI を確かめる
@@ -92,17 +108,21 @@ terraform -chdir=terraform/app plan
 マージすると main の CI が新 Pool・新 SA・Variables で動く。
 
 ```bash
-gh run watch -R tori-create-7991/01_self-digital-business-card $(gh run list -R tori-create-7991/01_self-digital-business-card -L 1 --json databaseId -q '.[0].databaseId')
+R=tori-create-7991/01_self-digital-business-card
+SHA=$(gh api repos/$R/commits/main -q .sha)
+RUN=$(gh run list -R $R --workflow=deploy.yml --branch=main --commit=$SHA -L 1 --json databaseId -q '.[0].databaseId')
+gh run watch -R $R "$RUN" --exit-status
 curl -sI https://card.tori-dev.com/ | head -1
 ```
 
 - 確認: run が成功し、Terraform Apply が `No changes`、サイトが 200。
 - 戻し方: マージを `git revert` する。旧 workflow は旧 Secrets・旧 Provider・旧 prefix の state を使うので、手順 5 の前ならそのまま動く。
+  Terraform Apply までは通って `firebase deploy` だけ落ちた場合は、サイトは前の版のまま配信され続ける。
+  権限不足ならエラーに出たロールを bootstrap/wif.tf に足して手順 2 の apply をやり直し、`gh workflow run deploy.yml --ref main -R $R` で再実行する。
 
 ## 5. 後片付け（手順 4 の成功を確かめてから）
 
 ```bash
-A=$A
 OLD=github-actions-tf@tori-develop.iam.gserviceaccount.com
 
 # 旧 SA の project IAM を外す（SA を消すだけだと deleted: の binding が残る）
