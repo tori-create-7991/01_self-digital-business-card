@@ -3,96 +3,52 @@
 This repository contains the source code for a personal profile site using **Vite + Vanilla HTML/CSS**, hosted on **Firebase Hosting**, and provisioned via **Terraform** and **GitHub Actions**.
 
 ## Architecture
-- **Frontend**: Standard HTML/CSS with Vite (for building). No heavy frameworks.
-- **Infrastructure**: Google Cloud Platform (Firebase Hosting).
-- **IaC**: Terraform manages the GCP Project configuration.
-- **CI/CD**: GitHub Actions deploys changes automatically on push.
-- **Security**: Workload Identity Federation (keyless authentication between GitHub and GCP).
+- **Frontend**: Standard HTML/CSS with Vite (for building). No heavy frameworks. `npm run build` first generates `src/index.html` from `src/config.ts`.
+- **Hosting**: Firebase Hosting on Google Cloud.
+- **IaC**: Terraform, split into two stacks:
+  - `terraform/bootstrap/` — applied **by a person, locally**. CI identity (Workload Identity Federation pool/provider, service account, IAM), GitHub Actions Variables, and the Cloudflare DNS record (optional).
+  - `terraform/app/` — applied **by GitHub Actions** on every push to `main`. Firebase project, Hosting site, custom domain.
+- **CI/CD**: GitHub Actions.
+  - `build.yml` — every PR: unit tests and build (required check `build`).
+  - `terraform.yml` — PR: fmt/validate and `plan` of the app stack, commented on the PR (required check `plan`). `main`: `apply`. Weekly: drift check.
+  - `deploy.yml` — after a successful `apply` on `main`: build and `firebase deploy`, then check the site returns 200.
+  - `main` is protected by a ruleset (PR required, `build` and `plan` must pass; admins can bypass, e.g. for Dependabot PRs touching `terraform/`, after checking `plan` locally).
+  - Actions are pinned to commit SHAs and updated weekly by Dependabot together with npm and Terraform providers. `firebase-tools` is pinned in `devDependencies`.
+- **Security**: keyless auth (WIF). The pool is dedicated to this repository. Two service accounts: `deployer` can only be used by jobs on `main` with the `production` Environment; `planner` is read-only. CI holds **no secrets** (Actions Variables only). Neither account can change IAM, WIF, or DNS, and they can only read (planner) or read/write (deployer) the app stack's state. Firebase Hosting roles are project-wide, so if the project hosts other sites, the deployer can deploy to them too (accepted: only `main` production jobs of this repository can use it).
+
+Names follow one rule: pool `<repo-slug>-pool`, provider `github-actions`, service accounts `gha-<slug>-<role>` (here `business-card`, shortened to fit 30 characters), state prefix `terraform/<repo-name>/{bootstrap,app}` (the full repository name, never a generic prefix such as `terraform/state`).
 
 ## Prerequisites
-- A Google Cloud Platform (GCP) Account.
-- A GitHub Account.
-- One of:
-  - **[Google Cloud Shell](https://shell.cloud.google.com/)** (browser; Terraform and `gcloud` are preinstalled), or
-  - **Your own machine** with [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) and [Terraform](https://developer.hashicorp.com/terraform/install) installed, and permission to edit IAM / Workload Identity Federation on the target project.
+- A GCP project with billing, and permission to edit IAM / Workload Identity Federation.
+- A GitHub account (`gh auth login`).
+- [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), [Terraform](https://developer.hashicorp.com/terraform/install) 1.7+ and Node.js 22.
+- Optional: a Cloudflare zone for a custom domain, and an API token with `Zone:Read` + `DNS:Edit` on that zone.
 
-## Setup Instructions
+## Setup (from scratch, e.g. after forking)
 
-### 1. Initialize Google Cloud Resources
-Run `scripts/setup_gcp.sh` once. It creates the Terraform state bucket, provisions WIF, Firebase, DNS, and prints the GitHub **Actions** secrets to configure next.
-
-Use **either** Cloud Shell **or** a local clone—the script is the same. Authentication uses **Application Default Credentials** (your user), not GitHub OIDC.
-
-#### Option A: Google Cloud Shell
-1. Open [Google Cloud Shell](https://shell.cloud.google.com/).
-2. Clone this repository:
+1. Edit `terraform/*/terraform.tfvars` and `terraform/*/backend.hcl` for your project and repository (the state prefix must contain your repository name; keep `app_state_prefix` in bootstrap equal to the app `backend.hcl` prefix). Shorten `sa_slug` if `gha-<sa_slug>-deployer` exceeds 30 characters. Set `enable_cloudflare = false` (bootstrap) and `custom_domain = ""` (app) if you do not use a custom domain.
+2. Create the state bucket once (Terraform cannot create its own backend):
    ```bash
-   git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-   cd YOUR_REPO_NAME
+   gcloud auth login && gcloud auth application-default login
+   gcloud storage buckets create "gs://YOUR_PROJECT-tfstate" --project=YOUR_PROJECT --location=us-central1 --uniform-bucket-level-access
+   gcloud storage buckets update "gs://YOUR_PROJECT-tfstate" --versioning
    ```
-3. Run:
+3. Apply bootstrap locally:
    ```bash
-   chmod +x scripts/setup_gcp.sh
-   gcloud auth application-default login
-   ./scripts/setup_gcp.sh
+   export GITHUB_TOKEN=$(gh auth token)
+   export CLOUDFLARE_API_TOKEN=...   # only when enable_cloudflare = true
+   terraform -chdir=terraform/bootstrap init -backend-config=backend.hcl
+   terraform -chdir=terraform/bootstrap apply
    ```
+   This writes the Actions Variables (`GCP_PROJECT_ID`, `WIF_PROVIDER`, `DEPLOYER_SA`, `PLANNER_SA`, `TF_STATE_BUCKET`, `TF_STATE_PREFIX_APP`, `PROD_SITE_ID`, `PROD_SITE_URL`), the `production` Environment and the `main` ruleset. No Secrets are needed.
+4. Open a PR and merge it into `main`. Actions applies the app stack, then builds and deploys.
 
-#### Option B: Local machine
-1. Clone the repository and `cd` into it.
-2. Log in and point `gcloud` at your project (replace with your project ID):
-   ```bash
-   gcloud auth login
-   gcloud auth application-default login
-   gcloud config set project YOUR_GCP_PROJECT_ID
-   ```
-3. Run the same script:
-   ```bash
-   chmod +x scripts/setup_gcp.sh
-   ./scripts/setup_gcp.sh
-   ```
+### Terraform changes from Dependabot or forks
+Those PRs cannot authenticate to GCP, so `plan` fails when they touch `terraform/`. Run `terraform -chdir=terraform/app init -backend-config=backend.hcl && terraform -chdir=terraform/app plan` locally, then merge as an admin.
 
-In both options, follow the prompts: **Project ID**, **GitHub repository** as `owner/repo` (this value is passed to Terraform as `github_repo` and must match the repo Actions runs in), and Cloudflare credentials.
+Re-run step 3 whenever you change anything under `terraform/bootstrap/`. CI never applies it.
 
-**Copy the output** at the end of the script; it lists the Secret values for GitHub.
-
-#### If GitHub Actions auth fails after a rename or transfer (WIF attribute condition)
-CI authenticates **before** `terraform apply`, so GCP may still enforce an old `assertion.repository` until something updates the provider. Fix it from a machine that can already access the project with ADC:
-
-```bash
-cd terraform
-terraform init -backend-config="bucket=YOUR_GCP_TF_STATE_BUCKET"
-terraform apply \
-  -var="project_id=YOUR_GCP_PROJECT_ID" \
-  -var="github_repo=owner/repo-matching-github-repository-setting" \
-  -var="cloudflare_api_token=YOUR_TOKEN" \
-  -var="cloudflare_zone_id=YOUR_ZONE_ID"
-```
-
-Use the **current** `owner/repo` from the GitHub repo page (or `git remote -v`). This aligns `terraform/iam.tf` with GitHub’s OIDC claims so Actions can authenticate again.
-
-### 2. Configure GitHub Secrets
-Add the secrets generated by the script to your GitHub Repository.
-
-If you are in **GitHub Codespaces**, you can run the `gh` commands provided by the script output.
-Otherwise, go to your Repository -> **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**.
-
-Add the following:
-- `GCP_PROJECT_ID`: Your GCP Project ID.
-- `GCP_TF_STATE_BUCKET`: The bucket name (e.g., `your-project-tfstate`).
-- `WIF_PROVIDER`: The full path to the Workload Identity Provider.
-- `GCP_SA_EMAIL`: The service account email (e.g., `github-actions-tf@your-project.iam.gserviceaccount.com`).
-- `CLOUDFLARE_API_TOKEN`: Your Cloudflare API Token (needs Zone > DNS > Edit permission).
-- `CLOUDFLARE_ZONE_ID`: Your Cloudflare Zone ID for `tori-dev.com`.
-
-### 3. Deploy
-1. Push your code to the `main` branch.
-   ```bash
-   git add .
-   git commit -m "Initial commit"
-   git push origin main
-   ```
-2. Go to the **Actions** tab in your repository to watch the deployment.
-3. Once finished, the **Deploy to Firebase Hosting** step will output your site URL (usually `https://YOUR-PROJECT.web.app`).
+Migrating this repository from the old single stack is described in [docs/runbook/two-stage-migration.md](docs/runbook/two-stage-migration.md).
 
 ## Local Development
 To run the site locally:

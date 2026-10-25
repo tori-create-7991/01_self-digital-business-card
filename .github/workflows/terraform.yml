@@ -1,0 +1,209 @@
+# app stack（terraform/app: Firebase Hosting のサイトとカスタムドメイン）の Terraform。
+#
+#   PR       両 stack の fmt・validate と、app の plan。plan の結果を PR にコメントする（必須チェック "plan"）
+#   main     apply する（Environment production の deployer SA）。終わったら deploy.yml が本番へ配信する
+#   毎週     plan -detailed-exitcode で手作業の変更（ズレ）を検知する（手動実行も同じ）
+#
+# bootstrap stack（WIF・SA・DNS・GitHub 設定）は CI では扱わない。人がローカルで apply する。
+# 値はすべて GitHub Variables（bootstrap stack が登録）から読む。Secrets は使わない。
+name: terraform
+
+on:
+  pull_request:
+  # main への push では毎回 apply する（差分が無ければ何もしない）。deploy.yml はこの完了を待って配信する。
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 1" # 毎週月曜 9:00 JST
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  TF_VERSION: "1.15.6"
+  TF_DIR: terraform/app
+
+jobs:
+  plan:
+    name: plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # 認証の要らない検査。フォークや Dependabot の PR でも動く。
+      - name: Static checks (fmt, validate, placeholders)
+        run: |
+          terraform fmt -check -recursive terraform
+          for dir in terraform/app terraform/bootstrap; do
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate -no-color
+          done
+          if grep -n 'TODO_' terraform/*/terraform.tfvars; then
+            echo "::error::terraform.tfvars に TODO_ が残っています（移行手順 1 で埋める値）"
+            exit 1
+          fi
+
+      # フォークや Dependabot の PR では OIDC トークンが発行されず GCP に入れない。
+      # その場合は plan を実行しない。Terraform に触れない PR なら必須チェックとしては成功にする。
+      # terraform/ に触れる PR なら失敗にして、ローカルで plan を確認したうえで管理者がマージするようにする
+      # （マージすると main の apply が走るため、plan を見ないまま通さない）。
+      - name: Check whether plan can run
+        id: can
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          ACTOR: ${{ github.actor }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [ "$ACTOR" != "dependabot[bot]" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          echo "### terraform plan は実行していません" >> "$GITHUB_STEP_SUMMARY"
+          echo "フォークまたは Dependabot の PR では GCP に認証できないため。" >> "$GITHUB_STEP_SUMMARY"
+          # 取得に失敗したら「触っていない」扱いにせず止める
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename') \
+            || { echo "::error::PR の変更ファイル一覧を取得できません"; exit 1; }
+          if grep -q '^terraform/' <<<"$files"; then
+            echo "この PR は terraform/ を変更しています。ローカルで plan を確認してから、管理者として保護を無視してマージしてください（README の「Terraform changes from Dependabot or forks」）。" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::terraform/ を変更する PR ですが plan を実行できません。ローカルで plan を確認してください"
+            exit 1
+          fi
+
+      - if: steps.can.outputs.run == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.PLANNER_SA }}
+
+      - name: Terraform plan
+        if: steps.can.outputs.run == 'true'
+        id: plan
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_PREFIX: ${{ vars.TF_STATE_PREFIX_APP }}
+        run: |
+          test -n "$TF_STATE_PREFIX" || { echo "::error::Variables の TF_STATE_PREFIX_APP がありません（bootstrap を apply してください）"; exit 1; }
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="prefix=$TF_STATE_PREFIX"
+          # planner はロックファイルを書けない（state は読み取り専用）ので -lock=false
+          set +e
+          terraform plan -input=false -no-color -lock=false -detailed-exitcode > "$RUNNER_TEMP/plan.txt" 2>&1
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/plan.txt"
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" -ne 1 ]
+
+      - name: Comment plan on PR
+        if: always() && steps.can.outputs.run == 'true' && steps.plan.outputs.exitcode != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_FILE: ${{ runner.temp }}/plan.txt
+          EXIT_CODE: ${{ steps.plan.outputs.exitcode }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan -->';
+            const raw = fs.readFileSync(process.env.PLAN_FILE, 'utf8');
+            const body = raw.length > 60000 ? raw.slice(-60000) : raw;
+            const status = { '0': '差分なし', '1': '失敗', '2': '差分あり' }[process.env.EXIT_CODE] ?? '不明';
+            // plan の出力に ``` が含まれても囲みが崩れないよう、4 つのバッククォートで囲む
+            const fence = '````';
+            const text = `${marker}\n### terraform plan（app）: ${status}\n\n<details><summary>plan の出力</summary>\n\n${fence}\n${body.replaceAll(fence, '```')}\n${fence}\n</details>`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body: text });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: text });
+            }
+
+  apply:
+    name: apply
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_PREFIX: ${{ vars.TF_STATE_PREFIX_APP }}
+        run: |
+          test -n "$TF_STATE_PREFIX" || { echo "::error::Variables の TF_STATE_PREFIX_APP がありません（bootstrap を apply してください）"; exit 1; }
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="prefix=$TF_STATE_PREFIX"
+          terraform apply -input=false -auto-approve
+
+  drift:
+    name: drift
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.PLANNER_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform plan (drift check)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_PREFIX: ${{ vars.TF_STATE_PREFIX_APP }}
+        run: |
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="prefix=$TF_STATE_PREFIX"
+          set +e
+          terraform plan -input=false -no-color -lock=false -detailed-exitcode
+          code=$?
+          set -e
+          if [ "$code" -eq 2 ]; then
+            echo "::error::コードと本番の Hosting 設定がずれています。plan の出力を確認し、コードを直すか main から apply してください。"
+          fi
+          exit "$code"
