@@ -25,17 +25,27 @@ variable "tf_state_bucket" {
 }
 
 # 名前は 00_my_env の命名ルール（gcp-ci-identity-naming）に従う。
-# <slug> = リポジトリ名を小文字・ハイフンにしたもの。32/30 文字を超えるので先頭の 01_ を落としている。
+# <slug> = リポジトリ名を小文字・ハイフンにしたもの。32 文字を超えるので先頭の 01_ を落としている。
 variable "wif_pool_id" {
   description = "WIF Pool ID（<slug>-pool、4〜32 文字）"
   type        = string
   default     = "self-digital-business-card-pool"
 }
 
-variable "deployer_sa_id" {
-  description = "CI が使う SA の account_id（gha-<slug>、6〜30 文字）"
+variable "sa_slug" {
+  description = "SA 名の <slug>。gha-<slug>-deployer / -planner が 30 文字以内に収まるように略す"
   type        = string
-  default     = "gha-self-digital-business-card"
+  default     = "business-card"
+
+  validation {
+    condition     = length("gha-${var.sa_slug}-deployer") <= 30
+    error_message = "gha-<sa_slug>-deployer が 30 文字を超える。sa_slug を短くする。"
+  }
+}
+
+variable "app_state_prefix" {
+  description = "app stack の state の prefix（terraform/app/backend.hcl と同じ値。末尾の / は付けない）"
+  type        = string
 }
 
 variable "enable_cloudflare" {

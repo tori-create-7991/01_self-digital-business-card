@@ -4,6 +4,11 @@ output "wif_provider_name" {
 }
 
 output "deployer_sa_email" {
-  description = "CI がなりすます SA"
+  description = "main の production ジョブがなりすます SA"
   value       = google_service_account.deployer.email
+}
+
+output "planner_sa_email" {
+  description = "plan とズレ検知がなりすます SA（読み取りだけ）"
+  value       = google_service_account.planner.email
 }

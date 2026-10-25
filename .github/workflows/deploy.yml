@@ -1,69 +1,85 @@
-name: Deploy to Firebase Hosting
+# 本番サイトへの配信。main への push で terraform.yml の apply が成功したあとに動く
+# （Hosting の変更が先に反映されてから配信するため）。手動実行もできる。
+# インフラの変更は terraform.yml が行う。ここは Hosting への配信だけ。
+# 値はすべて GitHub Variables（bootstrap stack が登録）から読む。Secrets は使わない。
+name: deploy
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [terraform]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 concurrency:
-  group: deploy-main
+  group: deploy-production
   cancel-in-progress: false
-
-# 値はすべて Actions Variables（terraform/bootstrap が書く）。CI は Secrets を持たない。
-env:
-  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
-  WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
-  GCP_SA_EMAIL: ${{ vars.GCP_SA_EMAIL }}
 
 jobs:
   deploy:
+    name: deploy
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      PROD_SITE_ID: ${{ vars.PROD_SITE_ID }}
+      PROD_SITE_URL: ${{ vars.PROD_SITE_URL }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # SA は refs/heads/main からしかなりすませない（main 以外の workflow_dispatch はここで落ちる）
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      # workflow_run のときは、apply したのと同じコミットを配信する
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          workload_identity_provider: ${{ env.WIF_PROVIDER }}
-          service_account: ${{ env.GCP_SA_EMAIL }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          terraform_version: "~1.15.0"
+          node-version: "22"
+          cache: npm
 
-      - name: Terraform Init (app)
-        working-directory: ./terraform/app
-        run: terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
-
-      - name: Terraform Apply (app)
-        working-directory: ./terraform/app
-        run: terraform apply -auto-approve -input=false -var="project_id=${PROJECT_ID}"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
+      # src/config.ts からリンク先の OGP を取得して src/index.html を作り、Vite で dist/ へ出力する
       - name: Build
         run: npm run build
 
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      # firebase-tools は devDependencies で版を固定している
       - name: Deploy to Firebase Hosting
-        # google-github-actions/auth が ADC を用意するので、firebase-tools はトークンなしで動く
         run: |
-          npm install -g firebase-tools
-          firebase use "${PROJECT_ID}"
-          firebase target:apply hosting card "${PROJECT_ID}-card"
-          firebase deploy --only hosting:card --project "${PROJECT_ID}" --non-interactive
+          npx firebase target:apply hosting card "$PROD_SITE_ID" --project "$GCP_PROJECT_ID"
+          npx firebase deploy --only hosting:card --project "$GCP_PROJECT_ID" --non-interactive
+
+      # 配信結果を実際に取得して確認する
+      - name: Verify deployment
+        run: |
+          echo "checking ${PROD_SITE_URL}"
+          for i in 1 2 3; do
+            CODE=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "${PROD_SITE_URL}/" || echo 000)
+            if [ "$CODE" = "200" ]; then
+              echo "HTTP 200: OK"
+              exit 0
+            fi
+            echo "  attempt ${i}: HTTP ${CODE}, retrying..."
+            sleep 10
+          done
+          echo "::error::本番が HTTP 200 を返しません（最後の HTTP ${CODE}）"
+          exit 1

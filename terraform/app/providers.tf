@@ -3,13 +3,11 @@
 terraform {
   required_version = ">= 1.7"
 
-  # bucket は init 時に -backend-config="bucket=<project>-tfstate" で渡す。
-  # prefix はリポジトリ名をフルで含める（汎用 prefix の衝突で他リポジトリの
-  # 本番 IAM を壊した事故がある）。フォークしたらリポジトリ名に合わせて書き換える。
-  # CI の SA はこの prefix の下しか読み書きできない（bootstrap/wif.tf の条件付き IAM）。
-  backend "gcs" {
-    prefix = "terraform/01_self-digital-business-card/app"
-  }
+  # bucket と prefix は backend.hcl で渡す（terraform init -backend-config=backend.hcl）。
+  # prefix にはリポジトリ名をフルで含めること（命名ルール gcp-ci-identity-naming）。
+  # 過去に "terraform/blog" のような汎用 prefix が別リポジトリの state と衝突し、
+  # 本番の SA 権限・WIF Provider・Artifact Registry を壊した事故がある。
+  backend "gcs" {}
 
   required_providers {
     google = {

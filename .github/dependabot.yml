@@ -1,0 +1,30 @@
+# 依存の更新 PR を週 1 回、種類ごとに 1 つにまとめて出す。
+# Dependabot の PR では GCP に認証できないので、plan は動かずビルドとテストの確認だけになる。
+# Terraform provider の更新は、マージ前にローカルで plan を確認する（README の「Terraform changes from Dependabot or forks」）。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: terraform
+    directories:
+      - /terraform/app
+      - /terraform/bootstrap
+    schedule:
+      interval: weekly
+    groups:
+      terraform:
+        patterns: ["*"]
